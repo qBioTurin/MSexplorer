@@ -295,16 +295,18 @@ server <- function(input, output, session) {
     vardata <- merge(dataClustered, Metadata) %>%
       select(-id)
     Nclust <- as.numeric(max(dataClustered$Cluster))
-    
-    library(ggplot2)
-    library(ggalluvial)
-    library(dplyr)
-    
+
     # paletteCluster = viridisLite::turbo(Nclust)
     paletteCluster <- RColorBrewer::brewer.pal(Nclust, "Set1")[1:Nclust]
     names(paletteCluster) <- paste0(1:Nclust)
     
+    # saveRDS( merge(
+    #   Metadata %>% select(id, EDSS_DIAGNOSI, EDSS_PROGRESSIONE),
+    #   dataClustered %>% select(id, Cluster)
+    # ),"DataCLandEDSS.Rds")
+    
     pl <- chordDiagram(Metadata, dataClustered)
+    
     pl & scale_fill_manual(values = paletteCluster) & scale_color_manual(values = paletteCluster)
   })
   # saveRDS(dataReact$dataClustered,"~/Desktop/dataClustered_5perc.Rds")

@@ -16,6 +16,8 @@ library(plotly)
 library(survival)
 library(survminer)
 
+library(ggalluvial)
+
 ### functions
 
 statistical_tests <- function(df) {
