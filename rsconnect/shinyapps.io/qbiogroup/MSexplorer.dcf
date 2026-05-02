@@ -1,0 +1,12 @@
+name: MSexplorer
+title: MSexplorer
+username: qbiogroup
+account: qbiogroup
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 14335466
+bundleId: 11754327
+url: https://qbiogroup.shinyapps.io/MSexplorer/
+version: 1
+asMultiple: FALSE
+asStatic: FALSE

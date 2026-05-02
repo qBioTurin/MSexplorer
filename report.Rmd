@@ -1,0 +1,504 @@
+---
+title: "PCA and K-means Clustering on MS Patient Data"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+---
+
+
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(
+  results='asis',
+  collapse = TRUE,
+  echo = FALSE,
+  warning = FALSE,
+  message = FALSE,
+  highlight = TRUE,
+  background = 'grey',
+  fig.height = 9, fig.width = 9
+)
+```
+
+```{r setup, include=FALSE}
+
+# Load necessary libraries
+library(ggrepel)
+library(ggfortify)
+library(dplyr)
+library(ggplot2)
+library(ggforce)
+library(factoextra)
+library(patchwork)
+library(tidyr)
+library(purrr)
+library(ggmosaic)
+library(stats)
+library(clusterCrit)
+library(plotly)
+setwd("~/Desktop/Archive")  # Set working directory
+output_folder = "boh/"       # Define output folder
+
+# Read metadata
+metadata <- readr::read_delim("~/Desktop/Archive/boh/Bacteria_alpha_metadata.csv", 
+                              delim = ",", escape_double = FALSE, trim_ws = TRUE)
+
+# Convert categorical variables to factors
+metadata$gc_treatment <- as.factor(metadata$gc_treatment)
+metadata$category <- as.factor(metadata$category)
+metadata$lesion_burden <- as.factor(metadata$lesion_burden)
+levels(metadata$lesion_burden) <- c("Lesion Low", "Lesion High")
+
+metadata$bone_marrow_lesions <- as.factor(metadata$bone_marrow_lesions)
+levels(metadata$bone_marrow_lesions) <- c("Spinal cord Low", "Spinal cord High")
+
+metadata$gadolinium_contrast <- as.factor(metadata$gadolinium_contrast)
+levels(metadata$gadolinium_contrast) <- c("Gadolinum No", "Gadolinum Yes")
+
+metadata$subtentorial_lesions <- as.factor(metadata$subtentorial_lesions)
+levels(metadata$subtentorial_lesions) <- c("Subtentorial No", "Subtenorial Yes")
+
+# Select relevant columns
+metadata <- metadata %>%
+  select(id, sex, age, therapy, category, gc_treatment, subtentorial_lesions, 
+         bone_marrow_lesions, gadolinium_contrast, lesion_burden)
+create_data <- function(file, type) {
+  data_new <- read.csv(file)
+  rownames(data_new) <- data_new$X
+  data_new <- data_new[, -1]
+  set.seed(1234)
+  data_new <- t(data_new)
+  data_new <- as.data.frame(data_new)
+  data_new <- data_new %>% mutate(across(everything(), as.numeric))
+  
+  colnames(data_new) <- paste0(type, "_", colnames(data_new))
+  data_new <- data_new %>% mutate(id = rownames(.))
+  
+  return(data_new)
+}
+
+# Load all CSV files
+files <- list.files(path = "~/Desktop/Archive", pattern = "\\.csv$", full.names = TRUE)
+
+# Apply function to load and process data
+DataList <- lapply(files, function(f) {
+  type <- gsub(x = basename(f), pattern = ".csv", replacement = "")
+  create_data(f, type)
+})
+
+# Merge data frames
+AllData <- merge(DataList[[3]], merge(DataList[[1]], DataList[[2]]))
+rownames(AllData) <- AllData$id
+AllData <- AllData %>% select(-id)
+```
+
+```{r functions}
+statistical_tests <- function(df) {
+  results <- data.frame(Variable = character(), Test = character(), P_Value = numeric(), stringsAsFactors = FALSE)
+  
+  for (var in colnames(df %>% select(-Cluster))) {
+    # Identify variable type
+    if (is.numeric(df[[var]])) {
+      # Check normality using Shapiro-Wilk test
+      if (shapiro.test(df[[var]])$p.value > 0.05) {
+        # If normal, apply ANOVA
+        test_result <- aov(df[[var]] ~ df[["Cluster"]])
+        p_value <- summary(test_result)[[1]][["Pr(>F)"]][1]
+        test_name <- "ANOVA"
+      } else {
+        # If not normal, apply Kruskal-Wallis test
+        test_result <- kruskal.test(df[[var]] ~ as.factor(df[["Cluster"]]))
+        p_value <- test_result$p.value
+        test_name <- "Kruskal-Wallis"
+      }
+      
+    } else {
+      # If categorical, use Chi-square test
+      contingency_table <- table(df[[var]], df[["Cluster"]])
+      
+      # Ensure all expected counts > 5 for Chi-square, otherwise use Fisher's exact test
+      if (all(chisq.test(contingency_table)$expected > 5)) {
+        test_result <- chisq.test(contingency_table)
+        test_name <- "Chi-square"
+      } else {
+        test_result <- fisher.test(contingency_table)
+        test_name <- "Fisher's Exact"
+      }
+      
+      p_value <- test_result$p.value
+      
+    }
+    
+    # Append results to dataframe
+    results <- rbind(results, data.frame(Variable = var, Test = test_name, P_Value = p_value, stringsAsFactors = FALSE))
+  }
+  
+  results = results %>% mutate(Output = if_else(P_Value < 0.05,"Significant differences","No significant differences"))
+  return(results)
+}
+cluster_indexes <-function(data){
+  #clusterCrit::getCriteriaNames(T)
+  
+  AllIndexes = do.call(rbind, 
+                       lapply(2:6,function(k){
+                         # Perform the kmeans algorithm
+                         cl <- kmeans(data, k)
+                         df = clusterCrit::intCriteria(as.matrix(data),cl$cluster,"all")
+                         data.frame(k = k, as.data.frame(df) )
+                       }
+                       )
+  )
+  
+  
+  vals <- vector()
+  for(nIndex in names(AllIndexes %>% select(-k))){
+    vals = c(vals, clusterCrit::bestCriterion(AllIndexes[[nIndex]],nIndex))
+  }
+  
+  bestK = sort(table(AllIndexes$k[vals]),decreasing = T)
+  
+  return(list(bestK = bestK, AllIndexes = AllIndexes))
+}
+cluster.generation <- function(data, Kmeans.before) {
+  pca_res <- prcomp(data, scale = TRUE)
+  plPCAvar <- factoextra::fviz_eig(pca_res)
+  
+  plPCA <- factoextra::fviz_pca_biplot(pca_res,
+                                       repel = TRUE,
+                                       col.var = "#2E9FDF",
+                                       col.ind = "#696969")
+  
+  summ <- summary(pca_res)$importance[2,]
+  cumsumm <- cumsum(summ)
+  PCmin <- min(which(cumsumm > 0.85))
+  pca_data <- pca_res$x[, 1:PCmin] 
+  
+  if (Kmeans.before) {
+    sil_values <- factoextra::fviz_nbclust(data, kmeans, method = "silhouette")
+    allCl = cluster_indexes(data)
+    
+    optimal_k_sil <- sil_values$data$clusters[which.max(sil_values$data$y)]
+    kmeans_result <- kmeans(data, centers = as.numeric(optimal_k_sil), nstart = 25)
+    
+    title <- "K-means Clustering on Initial Data"
+  } else {
+    sil_values <- factoextra::fviz_nbclust(pca_data, kmeans, method = "silhouette")
+    allCl = cluster_indexes(pca_data)
+    
+    optimal_k_sil <- sil_values$data$clusters[which.max(sil_values$data$y)]
+    kmeans_result <- kmeans(pca_data, centers = as.numeric(optimal_k_sil), nstart = 25)
+    
+    title <- paste0("K-means Clustering on PCA-Reduced Data (", PCmin, " components)")
+  }
+  
+  pca_data_df <- as.data.frame(pca_data)
+  pca_data_df$cluster <- as.factor(kmeans_result$cluster)
+  
+  plCL <- ggplot(pca_data_df, aes(x = PC1, y = PC2, color = cluster, shape = cluster)) +
+    geom_point(size = 3) +
+    ggforce::geom_mark_hull(aes(fill = cluster, group = cluster), alpha = 0.2) +
+    theme_minimal() +
+    labs(title = title, 
+         x = paste("Dim1 (", summ[1], "%)"),
+         y = paste("Dim2 (", summ[2], "%)"))
+  
+  plPCA$data$cluster <- as.factor(kmeans_result$cluster)
+  plCL2 <- plPCA + 
+    ggforce::geom_mark_hull(aes(fill = cluster, group = cluster), alpha = 0.2) +
+    labs(title = title, 
+         x = paste("Dim1 (", summ[1], "%)"),
+         y = paste("Dim2 (", summ[2], "%)"))
+  
+  return(list(pca_res = pca_res, pca_data_df = pca_data_df, plPCAvar = plPCAvar, plPCA = plPCA, silhouette = sil_values, AllClusteringIndex = allCl, plCL = plCL, plCL2 = plCL2,dataClustered = data.frame(id = rownames(pca_data_df), Cluster = pca_data_df$cluster)) )
+}
+test_indipendence<-function(info_tibble,variable_1,variable_2,palette){
+  table<-info_tibble%>%select(all_of(c(variable_2,variable_1)))%>%table()
+  table<-table[rowSums(table)!=0,colSums(table)!=0]
+  if(!is.table(table)){return(NULL)}
+  else{
+    df<-as.data.frame(table)
+    colnames(df)<-c("Var1","Var2","Count")
+    mosaicplot<-ggplot(data = df) +
+      geom_mosaic(aes(weight = Count, x = product(Var2), fill = Var1),alpha=1)+
+      xlab(variable_1)+
+      scale_fill_manual(values=palette)+
+      scale_color_manual(values=palette)+
+      guides(fill=guide_legend(title=variable_2),
+             color=guide_legend(title=variable_2))+
+      theme(axis.title.y = element_blank(),
+            axis.line = element_blank(),
+            panel.grid = element_blank(),
+            axis.ticks = element_blank(),
+            plot.background = element_rect(fill = "transparent",linewidth = 0),
+            panel.background= element_rect(fill = "transparent",linewidth = 0),
+            legend.box.background =  element_rect(fill = "transparent",linewidth = 0),
+            legend.background = element_rect(fill = "transparent",linewidth = 0),
+            strip.background=element_rect(fill = "transparent",linewidth = 1))
+    chisq_test<-chisq.test(table)
+    df_residuals<-as.data.frame.table(chisq_test$residuals)
+    colnames(df_residuals)<-c("Var1","Var2","Residual")
+    plot<-mosaicplot+
+      ggplot() +
+      geom_tile(data =df_residuals ,
+                aes(x = Var2, y = Var1, fill = Residual,width=0.9, height=0.9),color = "white") +
+      geom_text(data =df,aes(x=Var2,y=Var1,label=Count)) +
+      scale_fill_gradient2(low = "#583E60", high = "#B6A21B", mid = "white",
+                           midpoint = 0, limit = c(min(df_residuals$Residual), max(df_residuals$Residual)),
+                           space = "Lab", name = "Residuals")+
+      xlab(variable_1)+
+      theme(axis.title = element_blank(),
+            axis.line = element_blank(),
+            panel.grid = element_blank(),
+            axis.ticks = element_blank(),
+            plot.background = element_rect(fill = "transparent",linewidth = 0),
+            panel.background= element_rect(fill = "transparent",linewidth = 0),
+            legend.box.background =  element_rect(fill = "transparent",linewidth = 0),
+            legend.background = element_rect(fill = "transparent",linewidth = 0),
+            strip.background=element_rect(fill = "transparent",linewidth = 1))
+    if(any(chisq_test$expected<5)|all(dim(table)==c(2,2))){
+      test_type<-"Fisher"
+      test<-fisher.test(table)
+      plot<-plot+
+        plot_annotation(
+          caption = paste("p-value of the Fisher test: ",round(test$p.value,4)),
+          theme = theme(plot.background = element_rect(fill = "transparent",linewidth = 0),
+                        panel.background= element_rect(fill = "transparent",linewidth = 0),
+                        legend.box.background =  element_rect(fill = "transparent",linewidth = 0),
+                        legend.background = element_rect(fill = "transparent",linewidth = 0),
+                        strip.background=element_rect(fill = "transparent",linewidth = 1))
+        )
+    }
+    else{
+      test_type<-"Chi Squared"
+      test<-chisq_test
+      plot<-plot+
+        plot_annotation(
+          caption = paste("p-value of the Chi Squared test: ",round(test$p.value,4)),
+          theme = theme(plot.background = element_rect(fill = "transparent",linewidth = 0),
+                        panel.background= element_rect(fill = "transparent",linewidth = 0),
+                        legend.box.background =  element_rect(fill = "transparent",linewidth = 0),
+                        legend.background = element_rect(fill = "transparent",linewidth = 0),
+                        strip.background=element_rect(fill = "transparent",linewidth = 1))
+        )
+    }
+    return(list(test_type=test_type,test=test,plot=plot,table=table))
+  }
+}
+
+PCA3dplot = function(pca_res,pca_data_df){
+# Extract PCA loadings (eigenvectors)
+pca_loadings <- as.data.frame(pca_res$rotation[, 1:3])
+pca_loadings$var <- rownames(pca_loadings)
+
+# Scale loadings for visualization
+scale_factor <- max(abs(pca_data_df$PC1)) / max(abs(pca_loadings$PC1))
+pca_loadings[, 1:3] <- pca_loadings[, 1:3] * scale_factor
+
+# Prepare eigenvectors for plotting (start at 0,0,0 and go to loading values)
+arrows_df <- data.frame(
+  x = rep(0, nrow(pca_loadings)), xend = pca_loadings$PC1,
+  y = rep(0, nrow(pca_loadings)), yend = pca_loadings$PC2,
+  z = rep(0, nrow(pca_loadings)), zend = pca_loadings$PC3,
+  text = pca_loadings$var
+)
+
+
+pl = plot_ly() %>%
+  add_trace(
+    x = pca_data_df$PC1, y = pca_data_df$PC2, z = pca_data_df$PC3,
+    color =  paste0("Cluster ", pca_data_df$cluster),
+    type = "scatter3d", mode = "markers",
+    marker = list(size = 8),
+    text = rownames(pca_data_df),
+    hoverinfo = "text"
+  ) 
+
+for(tr in seq_along(arrows_df$text) ){
+  pl = pl %>% add_trace(
+    x = c(rbind(arrows_df$x[tr], arrows_df$xend[tr])),  
+    y = c(rbind(arrows_df$y[tr], arrows_df$yend[tr])),  
+    z = c(rbind(arrows_df$z[tr], arrows_df$zend[tr])), 
+    color = rep(arrows_df$text[tr],  each = 2),
+    type = "scatter3d", mode = "lines",
+    line = list(width =6),
+    text = rep(arrows_df$text[tr], each = 2), 
+    hoverinfo = "text"
+  )
+}
+pl = pl %>%
+  # Labels and layout
+  layout(
+    title = "3D PCA Plot",
+    scene = list(
+      xaxis = list(title = "PC1"),
+      yaxis = list(title = "PC2"),
+      zaxis = list(title = "PC3")
+    )
+  )
+   
+return(pl)
+}
+```
+
+# All measures togheter
+
+```{r kmeanAll}
+plotLIST <- cluster.generation(AllData, Kmeans.before = FALSE)
+plotLISTbefore <- cluster.generation(AllData, Kmeans.before = TRUE)
+
+# Display results
+plotLIST$plPCAvar 
+plotLIST$plPCA 
+
+
+# Compare clustering before and after PCA
+
+cat("\n\n## Stat test on PCA-reduced Data\n\n")
+
+k = as.numeric(names(plotLIST$AllClusteringIndex$bestK[1]))
+
+plotLIST$silhouette +
+  geom_vline(aes(xintercept =k ,
+                 color = paste0("Best k considering ",
+                                plotLIST$AllClusteringIndex$bestK[1], " indexes over ",
+                                sum((plotLIST$AllClusteringIndex$bestK)))
+  ), linetype = "dashed"
+  )+labs(col = "")
+
+plotLIST$plCL2 
+
+
+vardata = merge(plotLIST$dataClustered,metadata) %>% select(-id,-age)
+vars = colnames(vardata%>% select(-Cluster) )
+
+PCA3dplot(plotLIST$pca_res,plotLIST$pca_data_df)
+
+
+knitr::kable(statistical_tests(vardata))
+
+for(v in vars){
+  cat(paste0("\n\n### Variable: ",v," \n\n"))
+  res =test_indipendence(info_tibble =vardata ,
+                         variable_1 = "Cluster", variable_2 = v,
+                         palette = viridisLite::cividis(4)
+  )
+  
+  
+  print(res$plot & theme(legend.position = "bottom") )
+}
+
+
+cat("\n\n## Stat test on  initial Data\n\n")
+
+k = as.numeric(names(plotLISTbefore$AllClusteringIndex$bestK[1]))
+
+plotLISTbefore$silhouette +
+  geom_vline(aes(xintercept =k ,
+                 color = paste0("Best k considering ",
+                                plotLISTbefore$AllClusteringIndex$bestK[1], " indexes over ",
+                                sum((plotLISTbefore$AllClusteringIndex$bestK)))
+  ), linetype = "dashed"
+  )+labs(col = "")
+plotLISTbefore$plCL2
+
+PCA3dplot(plotLISTbefore$pca_res,plotLISTbefore$pca_data_df)
+
+
+vardata = merge(plotLISTbefore$dataClustered,metadata) %>% select(-id,-age)
+vars = colnames(vardata%>% select(-Cluster) )
+
+knitr::kable(statistical_tests(vardata))
+for(v in vars){
+  cat(paste0("\n\n### Variable: ",v," \n\n"))
+  res =test_indipendence(info_tibble =vardata ,
+                         variable_1 = "Cluster", variable_2 = v,
+                         palette = viridisLite::cividis(4)
+  )
+  
+  
+  print(res$plot & theme(legend.position = "bottom") )
+}
+
+```
+
+
+```{r kmeansing}
+
+for(i in 1:3){
+  DataList[[i]] -> data
+  cat(paste0("\n\n# ", gsub(x = names(DataList[[i]])[[1]], pattern = "_Lesion",replacement = ""), " measure\n\n") )
+  
+  rownames(data) = data$id
+  data = data %>% select(-id)
+  
+  plotLIST <- cluster.generation(data, Kmeans.before = FALSE)
+  plotLISTbefore <- cluster.generation(data, Kmeans.before = TRUE)
+  
+  # Display results
+  print(plotLIST$plPCAvar )
+  print(plotLIST$plPCA )
+  
+  
+  # Compare clustering before and after PCA
+  
+  cat("\n\n## Stat test on  PCA-reduced Data\n\n")
+  k = as.numeric(names(plotLIST$AllClusteringIndex$bestK[1]))
+  print(
+    plotLIST$silhouette +
+      geom_vline(aes(xintercept =k ,
+                     color = paste0("Best k considering ",
+                                    plotLIST$AllClusteringIndex$bestK[1], " indexes over ",
+                                    sum((plotLIST$AllClusteringIndex$bestK)))
+      ), linetype = "dashed"
+      )+labs(col = "")
+  )
+  
+  print(plotLIST$plCL2 )
+  
+  print(PCA3dplot(plotLIST$pca_res,plotLIST$pca_data_df) )
+  
+  vardata = merge(plotLIST$dataClustered,metadata) %>% select(-id,-age)
+  vars = colnames(vardata%>% select(-Cluster) )
+  print(knitr::kable(statistical_tests(vardata)))
+  for(v in vars){
+    cat(paste0("\n\n### Variable: ",v," \n\n"))
+    res =test_indipendence(info_tibble =vardata ,
+                           variable_1 = "Cluster", variable_2 = v,
+                           palette = viridisLite::cividis(4)
+    )
+    
+    print(res$plot & theme(legend.position = "bottom") )
+  }
+  
+  cat("\n\n## Stat test on  initial Data\n\n")
+  
+  k = as.numeric(names(plotLISTbefore$AllClusteringIndex$bestK[1]))
+  print(
+    plotLISTbefore$silhouette +
+      geom_vline(aes(xintercept =k ,
+                     color = paste0("Best k considering ",
+                                    plotLISTbefore$AllClusteringIndex$bestK[1], " indexes over ",
+                                    sum((plotLISTbefore$AllClusteringIndex$bestK)))
+      ), linetype = "dashed"
+      )+labs(col = "")
+  )
+  print(plotLISTbefore$plCL2)
+  
+  print(PCA3dplot(plotLISTbefore$pca_res,plotLISTbefore$pca_data_df))
+  vardata = merge(plotLISTbefore$dataClustered,metadata) %>% select(-id,-age)
+  vars = colnames(vardata%>% select(-Cluster) )
+  print(knitr::kable(statistical_tests(vardata)))
+  for(v in vars){
+    cat(paste0("\n\n### Variable: ",v," \n\n"))
+    res =test_indipendence(info_tibble =vardata ,
+                           variable_1 = "Cluster", variable_2 = v,
+                           palette = viridisLite::cividis(4)
+    )
+    
+    print(res$plot & theme(legend.position = "bottom") )
+  }
+}
+
+```
