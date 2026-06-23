@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "If you use MSexplorer, please cite the associated publication and this repository."
+title: "MSexplorer"
+version: "0.1.0"
+date-released: "2026-06-23"
+repository-code: "https://github.com/qBioTurin/MSexplorer"
+authors:
+  - family-names: "Pernice"
+    given-names: "Simone"

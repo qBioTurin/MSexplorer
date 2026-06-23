@@ -282,11 +282,6 @@ server <- function(input, output, session) {
     )
     print(fit)
     
-    
-    # dataReact$dataClustered -> datatmp
-    # datatmp$KS = ifelse(datatmp$Cluster  == "1", "LowRisk", ifelse(datatmp$Cluster  == "2", "HighRisk", "MediumRisk"))
-    # saveRDS(list(data = datatmp, plot =  ggsurv$plot, dataCluster =  dataReact$plotLIST),"~/Desktop/Species05Clustered_3CL.Rds")
-    
     ggsurv
   })
   
@@ -309,7 +304,7 @@ server <- function(input, output, session) {
     
     pl & scale_fill_manual(values = paletteCluster) & scale_color_manual(values = paletteCluster)
   })
-  # saveRDS(dataReact$dataClustered,"~/Desktop/dataClustered_5perc.Rds")
+
   observe({
     dataClustered <- req(dataReact$dataClustered)
     StatVar <- input$StatVar

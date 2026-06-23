@@ -20,6 +20,17 @@ library(ggalluvial)
 
 ### functions
 
+safe_fisher_test <- function(contingency_table) {
+  if (!identical(dim(contingency_table), c(2L, 2L))) {
+    return(fisher.test(contingency_table, simulate.p.value = TRUE, B = 10000))
+  }
+
+  tryCatch(
+    fisher.test(contingency_table),
+    error = function(e) fisher.test(contingency_table, simulate.p.value = TRUE, B = 10000)
+  )
+}
+
 statistical_tests <- function(df) {
   results <- data.frame(Variable = character(), Test = character(), P_Value = numeric(), stringsAsFactors = FALSE)
   
@@ -48,8 +59,12 @@ statistical_tests <- function(df) {
         test_result <- chisq.test(contingency_table)
         test_name <- "Chi-square"
       } else {
-        test_result <- fisher.test(contingency_table)
-        test_name <- "Fisher's Exact"
+        test_result <- safe_fisher_test(contingency_table)
+        test_name <- ifelse(
+          grepl("simulated", test_result$method, ignore.case = TRUE),
+          "Fisher's Exact (simulated p-value)",
+          "Fisher's Exact"
+        )
       }
       
       p_value <- test_result$p.value
@@ -168,6 +183,11 @@ test_indipendence<-function(info_tibble,variable_1,variable_2,palette){
   else{
     df<-as.data.frame(table)
     colnames(df)<-c("Var1","Var2","Count")
+    var_levels <- sort(unique(df$Var1))
+    if (is.null(palette) || length(palette) < length(var_levels)) {
+      palette <- viridisLite::cividis(length(var_levels))
+    }
+    names(palette) <- var_levels
     mosaicplot<-ggplot(data = df) +
       geom_mosaic(aes(weight = Count, x = product(Var2), fill = Var1),alpha=1)+
       xlab(variable_1)+
@@ -208,10 +228,10 @@ test_indipendence<-function(info_tibble,variable_1,variable_2,palette){
     
     if(any(chisq_test$expected<5)|all(dim(table)==c(2,2))){
       test_type<-"Fisher"
-      test<-fisher.test(table)
+      test<-safe_fisher_test(table)
       plot<-plot+
         plot_annotation(
-          caption = paste("p-value of the Fisher test: ",round(test$p.value,4)),
+          caption = paste(test$method, "p-value:", round(test$p.value, 4)),
           theme = theme(plot.background = element_rect(fill = "transparent",linewidth = 0),
                         panel.background= element_rect(fill = "transparent",linewidth = 0),
                         legend.box.background =  element_rect(fill = "transparent",linewidth = 0),

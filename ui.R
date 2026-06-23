@@ -343,15 +343,11 @@ ui <- dashboardPage(
                hr(),
                div(
                  style = "font-size:14px; color: #666666;",
-                 HTML("For more information on the analysis, please refer to:"),
-                 tags$a(
-                   href = "https://academic.oup.com/bioinformatics/article/39/5/btad201/7133735?login=true",
-                   HTML("Authors ; 'Title', Journal (2025).")
-                 )
+                 HTML("For citation details, please refer to the associated publication and the repository metadata.")
                ),
                br(),
                tags$a(
-                 href = "https://qbioturin.github.io/",
+                 href = "https://github.com/qBioTurin/MSexplorer",
                  target = "_blank",
                  icon("github"), " GitHub Repository",
                  style = "color: #1d8fbd; font-size:14px; text-decoration:none;"
