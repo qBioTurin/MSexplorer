@@ -1,4 +1,4 @@
-selected_var <- "Shannon"
+selected_var <- "Entropy"
 selected_Method <- "Both"
 data_tool <- "individual"
 selected_patient <- "MS"
