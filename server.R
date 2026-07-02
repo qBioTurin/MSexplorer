@@ -109,12 +109,13 @@ server <- function(input, output, session) {
     )
   })
   
-  observeEvent(input$button_start, {
+  #observeEvent(input$button_start, {
     # req(input$selected_var)
     # req(selected_perc)
     # req(selected_patient)
     
     # reduce = input$reduce
+  observe({
     reduce <- TRUE
     isolate({
       Data <- DataComplete %>%

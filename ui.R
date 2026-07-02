@@ -435,30 +435,30 @@ ui <- dashboardPage(
             box(
               width = 12, status = "primary",
               fluidRow(
+                # column(
+                #   3,
+                #   #tags$label(style = "font-weight: 600; font-size: 14px; color: #2c3e50;", "Select relative abundance threshold:"),
+                #   # selectInput("selected_perc",
+                #   #             label = NULL,
+                #   #             choices = c("0.1%" = "001", "1%" = "01", "0%" = "0", "01WoC" = "01WoC"), selected = "001"
+                #   # ),
+                #   # selectInput(inputId = "selected_var",
+                #   #             label =  "Select Method to consider:",
+                #   #             choice = c("Both","Maaslin3"), selected = "Both" ),
+                #   fluidRow(
+                #     column(
+                #       12,
+                #       actionButton("button_start",
+                #                    label = tags$span(icon("play"), " Start Analysis"),
+                #                    class = "btn-primary",
+                #                    style = "width: 100%; margin-top: 10px; font-size: 16px; padding: 10px;"
+                #       )
+                #     )
+                #   )
+                #   # choices = c("0.1%"="264","0.325%" = "167","1%" = "116","5%" = "39"),selected = "264" )
+                # ),
                 column(
-                  3,
-                  tags$label(style = "font-weight: 600; font-size: 14px; color: #2c3e50;", "Select relative abundance threshold:"),
-                  # selectInput("selected_perc",
-                  #             label = NULL,
-                  #             choices = c("0.1%" = "001", "1%" = "01", "0%" = "0", "01WoC" = "01WoC"), selected = "001"
-                  # ),
-                  # selectInput(inputId = "selected_var",
-                  #             label =  "Select Method to consider:",
-                  #             choice = c("Both","Maaslin3"), selected = "Both" ),
-                  fluidRow(
-                    column(
-                      12,
-                      actionButton("button_start",
-                                   label = tags$span(icon("play"), " Start Analysis"),
-                                   class = "btn-primary",
-                                   style = "width: 100%; margin-top: 10px; font-size: 16px; padding: 10px;"
-                      )
-                    )
-                  )
-                  # choices = c("0.1%"="264","0.325%" = "167","1%" = "116","5%" = "39"),selected = "264" )
-                ),
-                column(
-                  9,
+                  12,
                   withMathJax(
                     HTML("
   <h3><b>PCA Index: Entropy-Based Metric</b></h3>
