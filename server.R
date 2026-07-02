@@ -160,6 +160,15 @@ server <- function(input, output, session) {
         plotLIST$plPCA
       })
       
+      output$inputData <- renderDT({
+        datatable(plotLIST$Data,
+                  options = list(pageLength = 20, scrollX = TRUE),
+                  rownames = T,
+                  filter = "top"
+        )
+      })
+      
+      
       kbest <- as.numeric(names(plotLIST$AllClusteringIndex$bestK[1]))
       
       output$clustChoicePlot <- renderPlot({
@@ -182,6 +191,15 @@ server <- function(input, output, session) {
       #                  choices = c("", colnames(Metadata %>% select(-id,-Event,-EventTime))))
     })
   })
+  
+  output$downloadInputData <- downloadHandler(
+    filename = function() {
+      "MSexplorer_data.csv"
+    },
+    content = function(file) {
+      write.csv(dataReact$plotLIST$Data, file, row.names = T)
+    }
+  )
   
   observeEvent(input$clusterStart, {
     shinybusy::show_modal_spinner()

@@ -526,7 +526,12 @@ ui <- dashboardPage(
           fluidRow(
             box(plotOutput("pcaPlotvar"), width = 6),
             box(DT::DTOutput("FeatureComp"), width = 6),
-            box(plotOutput("pcaPlot", width = "100%", height = "600px"), width = 12)
+            box(plotOutput("pcaPlot", width = "100%", height = "600px"), width = 12),
+            box(title = tags$span(icon("table"), " Input Data Table"),
+                status = "primary", solidHeader = TRUE,
+                DT::DTOutput("inputData"),
+                downloadButton("downloadInputData", "Download Data", style = "margin-top: 10px;"),
+                width = 12)
           )
         )
       ),
